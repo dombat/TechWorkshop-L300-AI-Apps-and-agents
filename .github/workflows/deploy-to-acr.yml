@@ -1,0 +1,51 @@
+name: Build and push to Azure Container Registry
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Create src/.env from the GitHub secret ENV (never committed)
+      - name: Create .env from GitHub secret
+        working-directory: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Write the secret to a .env file inside the build context (src/)
+          printf '%s' "${{ secrets.ENV }}" > .env
+
+      # Login to ACR using username/password (recommended simplest approach)
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src
+          file: ./src/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.ACR_REPOSITORY }}:latest
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.ACR_REPOSITORY }}:${{ github.sha }}
+
+      # Best-effort cleanup so the runner workspace doesn't retain the file in later steps
+      - name: Cleanup .env
+        if: always()
+        working-directory: src
+        shell: bash
+        run: |
+          rm -f .env
